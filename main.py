@@ -36,6 +36,7 @@ from datetime import datetime
 import calendar
 import asyncpg
 import os
+
 # ===== 設定 =====
 TOKEN = os.environ["DISCORD_TOKEN"]
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -486,14 +487,20 @@ class DateSelectView(discord.ui.View):
         back.callback = self.go_back
         self.add_item(back)
 
-        # 全選択・全解除（row=4に収まる場合のみ）
-        sel_all = discord.ui.Button(label=tx(lang, "select_all"), style=discord.ButtonStyle.primary, row=4)
-        sel_all.callback = self.select_all_cb
-        self.add_item(sel_all)
+        # 全選択・全解除（row=4の残りスペースに入れる、入らない場合はスキップ）
+        try:
+            sel_all = discord.ui.Button(label=tx(lang, "select_all"), style=discord.ButtonStyle.primary, row=4)
+            sel_all.callback = self.select_all_cb
+            self.add_item(sel_all)
+        except ValueError:
+            pass
 
-        desel_all = discord.ui.Button(label=tx(lang, "deselect_all"), style=discord.ButtonStyle.secondary, row=4)
-        desel_all.callback = self.deselect_all_cb
-        self.add_item(desel_all)
+        try:
+            desel_all = discord.ui.Button(label=tx(lang, "deselect_all"), style=discord.ButtonStyle.secondary, row=4)
+            desel_all.callback = self.deselect_all_cb
+            self.add_item(desel_all)
+        except ValueError:
+            pass
 
     def make_day_cb(self, day):
         async def cb(interaction: discord.Interaction):
@@ -646,6 +653,45 @@ async def moriagetai(interaction: discord.Interaction):
         ephemeral=True
     )
 
+
+
+# ===== 削除コマンド =====
+@tree.command(name="moriagetai_delete", description="指定した投票メッセージを削除します / Delete a poll by message ID")
+@app_commands.describe(message_id="削除する投票メッセージのID / Message ID to delete")
+async def moriagetai_delete(interaction: discord.Interaction, message_id: str):
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        msg_id = int(message_id)
+    except ValueError:
+        await interaction.followup.send("❌ 有効なメッセージIDを入力してください。/ Please enter a valid message ID.", ephemeral=True)
+        return
+
+    # DBから確認
+    poll_row = await db.fetchrow("SELECT lang FROM polls WHERE message_id=$1 LIMIT 1", msg_id)
+    time_row = await db.fetchrow("SELECT lang FROM time_polls WHERE message_id=$1 LIMIT 1", msg_id)
+
+    if not poll_row and not time_row:
+        await interaction.followup.send("❌ 該当する投票が見つかりませんでした。/ No poll found with that message ID.", ephemeral=True)
+        return
+
+    # DBから削除
+    await db.execute("DELETE FROM poll_votes WHERE message_id=$1", msg_id)
+    await db.execute("DELETE FROM polls WHERE message_id=$1", msg_id)
+    await db.execute("DELETE FROM time_votes WHERE message_id=$1", msg_id)
+    await db.execute("DELETE FROM time_polls WHERE message_id=$1", msg_id)
+
+    # メッセージも削除
+    try:
+        msg = await interaction.channel.fetch_message(msg_id)
+        await msg.delete()
+    except discord.NotFound:
+        pass
+    except discord.Forbidden:
+        await interaction.followup.send("⚠️ DBからは削除しましたが、メッセージの削除権限がありません。/ Deleted from DB but missing permission to delete the message.", ephemeral=True)
+        return
+
+    await interaction.followup.send("✅ 投票を削除しました！/ Poll deleted successfully!", ephemeral=True)
 
 # ===== リアクションイベント =====
 @bot.event
