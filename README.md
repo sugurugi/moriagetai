@@ -267,3 +267,81 @@ MIT License - 可自由使用、修改和分发。
 ### 🤝 贡献
 
 欢迎提交PR和Issue！
+
+---
+
+## 🇯🇵 トラブルシューティング
+
+### BOTがオフラインになった
+1. Railwayのプロジェクトを開く
+2. BOTのサービス → 「Deployments」タブ
+3. 「Redeploy」をクリック
+4. それでも直らない場合はDiscord Developer Portalでトークンをリセットして、RailwayのVariablesを更新する
+
+### スラッシュコマンドが出てこない
+- Discordを完全に再起動する
+- しばらく待つ（最大1時間かかる場合あり）
+
+### インタラクションに失敗しましたと表示される
+- BOTがクラッシュしている可能性がある → Railwayのログを確認する
+- Discordを再起動して再度試す
+
+### リアクションが反応しない
+- BOTがオフラインになっている可能性がある → Railwayを確認する
+- Server Members IntentがONになっているか確認する
+
+### データが消えた
+- RailwayのPostgreSQLが正常に動作しているか確認する
+- BOTサービスのVariablesに `DATABASE_URL` が設定されているか確認する
+
+---
+
+## 🇺🇸 Troubleshooting
+
+### BOT is offline
+1. Open your Railway project
+2. Click the BOT service → "Deployments" tab
+3. Click "Redeploy"
+4. If it still doesn't work, reset the token in Discord Developer Portal and update the Railway Variables
+
+### Slash command doesn't appear
+- Fully restart Discord
+- Wait a while (may take up to 1 hour)
+
+### "Interaction failed" error
+- The BOT may have crashed → Check Railway logs
+- Restart Discord and try again
+
+### Reactions don't work
+- The BOT may be offline → Check Railway
+- Make sure Server Members Intent is enabled
+
+### Data was lost
+- Check that Railway PostgreSQL is running properly
+- Make sure `DATABASE_URL` is set in the BOT service Variables
+
+---
+
+## 🇨🇳 故障排除
+
+### 机器人离线了
+1. 打开Railway项目
+2. 点击BOT服务 → "Deployments"标签
+3. 点击"Redeploy"
+4. 如果仍然无效，请在Discord Developer Portal重置Token，并更新Railway的Variables
+
+### 斜杠命令不显示
+- 完全重启Discord
+- 等待一段时间（最多可能需要1小时）
+
+### 显示"交互失败"错误
+- BOT可能已崩溃 → 检查Railway日志
+- 重启Discord后再试
+
+### 表情符号反应无效
+- BOT可能离线 → 检查Railway
+- 确认Server Members Intent已开启
+
+### 数据丢失了
+- 检查Railway的PostgreSQL是否正常运行
+- 确认BOT服务的Variables中已设置`DATABASE_URL`
