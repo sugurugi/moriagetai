@@ -36,9 +36,9 @@ from datetime import datetime
 import calendar
 import asyncpg
 import os
-
 # ===== 設定 =====
-TOKEN = os.environ["TOKEN"]
+TOKEN = os.environ.get("TOKEN", "NOT_FOUND")
+print(f"TOKEN starts with: {TOKEN[:10]}")
 DATABASE_URL = os.environ["DATABASE_URL"]
 
 DATE_EMOJIS = [
