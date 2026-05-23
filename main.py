@@ -38,7 +38,7 @@ import asyncpg
 import os
 
 # ===== 設定 =====
-TOKEN = os.environ["DISCORD_TOKEN"]
+TOKEN = os.environ["TOKEN"]
 DATABASE_URL = os.environ["DATABASE_URL"]
 
 DATE_EMOJIS = [
