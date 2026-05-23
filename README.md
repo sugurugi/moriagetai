@@ -1,3 +1,7 @@
+
+
+https://github.com/user-attachments/assets/4e9c0a1a-7f3f-46af-ae0e-4280587435a6
+
 # 🍕 EVENT BOT
 
 > 🇯🇵 日本語の説明は[こちら](#-日本語)
