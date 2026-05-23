@@ -37,7 +37,7 @@ import calendar
 import asyncpg
 import os
 # ===== 設定 =====
-TOKEN = os.environ.get("TOKEN", "NOT_FOUND")
+TOKEN = os.environ["DISCORD_TOKEN"]
 DATABASE_URL = os.environ["DATABASE_URL"]
 
 DATE_EMOJIS = [
