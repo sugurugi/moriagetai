@@ -1,7 +1,3 @@
-
-
-https://github.com/user-attachments/assets/4e9c0a1a-7f3f-46af-ae0e-4280587435a6
-
 # 🍕 EVENT BOT
 
 > 🇯🇵 日本語の説明は[こちら](#-日本語)
@@ -267,6 +263,172 @@ MIT License - 可自由使用、修改和分发。
 ### 🤝 贡献
 
 欢迎提交PR和Issue！
+
+---
+
+## 🇯🇵 ローカルでの起動方法
+
+RailwayなしでPC上で直接動かす方法です。
+
+### 1. リポジトリをダウンロード
+
+```bash
+git clone https://github.com/sugurugi/moriagetai.git
+cd moriagetai
+```
+
+または右上の「Code」→「Download ZIP」でダウンロードして解凍してください。
+
+### 2. Pythonのインストール
+
+https://www.python.org/downloads/ からPython 3.10以上をインストール。
+インストール時に **「Add Python to PATH」** にチェックを入れること！
+
+### 3. 依存パッケージをインストール
+
+```bash
+pip install discord.py asyncpg
+```
+
+### 4. PostgreSQLの準備
+
+- [PostgreSQL公式サイト](https://www.postgresql.org/download/)からインストール
+- データベースを作成してURLをメモしておく
+
+### 5. 環境変数を設定
+
+Windowsの場合：
+```
+set DISCORD_TOKEN=あなたのトークン
+set DATABASE_URL=あなたのPostgreSQL URL
+```
+
+Mac/Linuxの場合：
+```
+export DISCORD_TOKEN=あなたのトークン
+export DATABASE_URL=あなたのPostgreSQL URL
+```
+
+### 6. 起動
+
+```bash
+python main.py
+```
+
+`✅ BOT起動:` と表示されれば成功です！
+
+⚠️ **注意**: コマンドプロンプトを閉じるとBOTも止まります。
+
+---
+
+## 🇺🇸 Running Locally
+
+How to run the BOT on your PC without Railway.
+
+### 1. Download the repository
+
+```bash
+git clone https://github.com/sugurugi/moriagetai.git
+cd moriagetai
+```
+
+Or click "Code" → "Download ZIP" and extract it.
+
+### 2. Install Python
+
+Install Python 3.10+ from https://www.python.org/downloads/
+Make sure to check **"Add Python to PATH"** during installation!
+
+### 3. Install dependencies
+
+```bash
+pip install discord.py asyncpg
+```
+
+### 4. Set up PostgreSQL
+
+- Install from [PostgreSQL official site](https://www.postgresql.org/download/)
+- Create a database and note down the URL
+
+### 5. Set environment variables
+
+Windows:
+```
+set DISCORD_TOKEN=your_token
+set DATABASE_URL=your_postgresql_url
+```
+
+Mac/Linux:
+```
+export DISCORD_TOKEN=your_token
+export DATABASE_URL=your_postgresql_url
+```
+
+### 6. Run
+
+```bash
+python main.py
+```
+
+If you see `✅ BOT起動:`, it's working!
+
+⚠️ **Note**: Closing the terminal will stop the BOT.
+
+---
+
+## 🇨🇳 本地运行方法
+
+不使用Railway，直接在电脑上运行BOT的方法。
+
+### 1. 下载仓库
+
+```bash
+git clone https://github.com/sugurugi/moriagetai.git
+cd moriagetai
+```
+
+或点击右上角"Code"→"Download ZIP"下载并解压。
+
+### 2. 安装Python
+
+从 https://www.python.org/downloads/ 安装Python 3.10以上版本。
+安装时务必勾选 **"Add Python to PATH"**！
+
+### 3. 安装依赖
+
+```bash
+pip install discord.py asyncpg
+```
+
+### 4. 准备PostgreSQL
+
+- 从[PostgreSQL官网](https://www.postgresql.org/download/)安装
+- 创建数据库并记下连接URL
+
+### 5. 设置环境变量
+
+Windows:
+```
+set DISCORD_TOKEN=你的Token
+set DATABASE_URL=你的PostgreSQL URL
+```
+
+Mac/Linux:
+```
+export DISCORD_TOKEN=你的Token
+export DATABASE_URL=你的PostgreSQL URL
+```
+
+### 6. 启动
+
+```bash
+python main.py
+```
+
+看到 `✅ BOT起動:` 就表示成功了！
+
+⚠️ **注意**: 关闭终端窗口会导致BOT停止运行。
+
 
 ---
 
