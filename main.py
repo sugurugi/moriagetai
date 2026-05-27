@@ -222,6 +222,19 @@ def pad(text, width):
     length = sum(2 if ord(c) > 0x2E7F else 1 for c in text)
     return text + " " * max(0, width - length)
  
+def truncate_name(name: str) -> str:
+    """表示名を省略する（全角5文字・半角10文字上限）"""
+    result = ""
+    count = 0
+    for c in name:
+        w = 2 if ord(c) > 0x2E7F else 1
+        if count + w > 10:
+            result += ".."
+            break
+        result += c
+        count += w
+    return result
+ 
 def get_date_str(selected_dates, lang):
     if not selected_dates:
         return tx(lang, "not_selected")
@@ -237,7 +250,7 @@ def get_month_str(selected_months, lang):
  
  
 # ===== テーブル生成 =====
-DATES_PER_MSG = 7  # 1メッセージあたりの最大日数
+DATES_PER_MSG = 5  # 1メッセージあたりの最大日数
  
 async def build_table_from_db(message_id, lang):
     rows = await db.fetch("SELECT emoji, date, weekday FROM polls WHERE message_id=$1 ORDER BY row_order", message_id)
@@ -247,8 +260,18 @@ async def build_table_from_db(message_id, lang):
     votes = await db.fetch("SELECT emoji, username FROM poll_votes WHERE message_id=$1", message_id)
     for v in votes:
         if v['emoji'] in date_data:
-            date_data[v['emoji']]["users"].append(v['username'])
+            if v['username'] not in date_data[v['emoji']]["users"]:
+                date_data[v['emoji']]["users"].append(v['username'])
     return date_data
+ 
+ 
+async def build_single_message_table(message_id, lang):
+    """1メッセージ分のテーブルを生成して返す"""
+    date_data = await build_table_from_db(message_id, lang)
+    if not date_data:
+        return None
+    chunk_items = list(date_data.items())
+    return build_table_chunk(date_data, lang, chunk_items)
  
  
 def build_table_chunk(date_data: dict, lang: str, chunk_items: list) -> str:
@@ -267,7 +290,7 @@ def build_table_chunk(date_data: dict, lang: str, chunk_items: list) -> str:
         else:
             for i in range(max_u):
                 lines.append("".join(
-                    pad(info["users"][i] if i < len(info["users"]) else "", COL_WIDTH)
+                    pad(truncate_name(info["users"][i]) if i < len(info["users"]) else "", COL_WIDTH)
                     for _, info in row_items
                 ))
         lines.append("─" * (COLS * COL_WIDTH))
@@ -724,10 +747,8 @@ async def on_reaction_add(reaction: discord.Reaction, user: discord.User):
             "INSERT INTO poll_votes (message_id, emoji, username) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
             msg_id, emoji, user.display_name
         )
-        date_data = await build_table_from_db(msg_id, row['lang'])
-        if date_data:
-            chunk_items = list(date_data.items())
-            content = build_table_chunk(date_data, row['lang'], chunk_items)
+        content = await build_single_message_table(msg_id, row['lang'])
+        if content:
             await reaction.message.edit(content=content[:1990])
  
     row = await db.fetchrow("SELECT lang FROM time_polls WHERE message_id=$1 AND emoji=$2", msg_id, emoji)
@@ -751,10 +772,8 @@ async def on_reaction_remove(reaction: discord.Reaction, user: discord.User):
     row = await db.fetchrow("SELECT lang FROM polls WHERE message_id=$1 AND emoji=$2", msg_id, emoji)
     if row:
         await db.execute("DELETE FROM poll_votes WHERE message_id=$1 AND emoji=$2 AND username=$3", msg_id, emoji, user.display_name)
-        date_data = await build_table_from_db(msg_id, row['lang'])
-        if date_data:
-            chunk_items = list(date_data.items())
-            content = build_table_chunk(date_data, row['lang'], chunk_items)
+        content = await build_single_message_table(msg_id, row['lang'])
+        if content:
             await reaction.message.edit(content=content[:1990])
  
     row = await db.fetchrow("SELECT lang FROM time_polls WHERE message_id=$1 AND emoji=$2", msg_id, emoji)
