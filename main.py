@@ -3,7 +3,7 @@ EVENT BOT
 =========================================
 概要:
   Discordサーバー向けのイベント日程調整BOT
-
+ 
 機能:
   - 言語選択（ENG / JPN / CHI）
   - モード選択
@@ -14,21 +14,21 @@ EVENT BOT
   - 開始時間候補をモーダルで入力（最大10個）
   - リアクションで投票・解除（複数選択OK）
   - 投票データはPostgreSQLに永続保存
-
+ 
 コマンド:
   /moriagetai  → BOTを起動
-
+ 
 環境変数（Railwayで設定）:
   DISCORD_TOKEN   : BotのトークンKey
   DATABASE_URL    : PostgreSQL接続URL
-
+ 
 制限:
   - 候補日: 最大30日
   - 開始時間候補: 最大10個
   - 月選択: 今月から12ヶ月先まで
 =========================================
 """
-
+ 
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -36,11 +36,11 @@ from datetime import datetime
 import calendar
 import asyncpg
 import os
-
+ 
 # ===== 設定 =====
 TOKEN = os.environ["DISCORD_TOKEN"]
 DATABASE_URL = os.environ["DATABASE_URL"]
-
+ 
 DATE_EMOJIS = [
     "🍕","🍔","🌮","🍜","🍣","🍱","🍛","🍝","🥗","🍤",
     "🍙","🍚","🍞","🥪","🍗","🍖","🥩","🍳","🥘","🫕",
@@ -49,7 +49,7 @@ DATE_EMOJIS = [
 MAX_REACTION_DATES = 20  # Discordのリアクション上限
 TIME_EMOJIS = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
 WEEKDAYS_EN = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
-
+ 
 TEXTS = {
     "ENG": {
         "select_lang":    "Please select a language.",
@@ -148,27 +148,27 @@ TEXTS = {
         "people":         "{n}人",
     }
 }
-
+ 
 COLS = 5
 COL_WIDTH = 16
-
+ 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
 intents.members = True
-
+ 
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 db: asyncpg.Pool = None
-
-
+ 
+ 
 # ===== DB初期化 =====
 async def init_db():
     global db
     db = await asyncpg.create_pool(DATABASE_URL)
     # 既存テーブルにrow_orderカラムがなければ追加
     await db.execute("ALTER TABLE polls ADD COLUMN IF NOT EXISTS row_order INT DEFAULT 0")
-
+ 
     await db.execute("""
         CREATE TABLE IF NOT EXISTS polls (
             message_id BIGINT,
@@ -205,23 +205,23 @@ async def init_db():
             PRIMARY KEY (message_id, emoji, username)
         )
     """)
-
-
+ 
+ 
 # ===== ユーティリティ =====
 def tx(lang, key, **kwargs):
     text = TEXTS[lang][key]
     return text.format(**kwargs) if kwargs else text
-
+ 
 def get_weekday(year, month, day):
     try:
         return WEEKDAYS_EN[datetime(year, month, day).weekday()]
     except ValueError:
         return ""
-
+ 
 def pad(text, width):
     length = sum(2 if ord(c) > 0x2E7F else 1 for c in text)
     return text + " " * max(0, width - length)
-
+ 
 def get_date_str(selected_dates, lang):
     if not selected_dates:
         return tx(lang, "not_selected")
@@ -229,14 +229,16 @@ def get_date_str(selected_dates, lang):
         f"{d['month']}/{d['day']}"
         for d in sorted(selected_dates, key=lambda x: (x['year'], x['month'], x['day']))
     )
-
+ 
 def get_month_str(selected_months, lang):
     if not selected_months:
         return tx(lang, "not_selected")
     return "  ".join(f"{m['year']}/{m['month']}" for m in sorted(selected_months, key=lambda x: (x['year'], x['month'])))
-
-
+ 
+ 
 # ===== テーブル生成 =====
+DATES_PER_MSG = 7  # 1メッセージあたりの最大日数
+ 
 async def build_table_from_db(message_id, lang):
     rows = await db.fetch("SELECT emoji, date, weekday FROM polls WHERE message_id=$1 ORDER BY row_order", message_id)
     if not rows:
@@ -246,11 +248,14 @@ async def build_table_from_db(message_id, lang):
     for v in votes:
         if v['emoji'] in date_data:
             date_data[v['emoji']]["users"].append(v['username'])
-
-    items = list(date_data.items())
+    return date_data
+ 
+ 
+def build_table_chunk(date_data: dict, lang: str, chunk_items: list) -> str:
+    """指定した日付のチャンクでテーブルを生成"""
     lines = ["```", tx(lang, "table_header"), "━" * (COLS * COL_WIDTH)]
-    for row_start in range(0, len(items), COLS):
-        row_items = items[row_start:row_start + COLS]
+    for row_start in range(0, len(chunk_items), COLS):
+        row_items = chunk_items[row_start:row_start + COLS]
         lines.append("".join(
             pad(f"{e}:{info['date']}({info['weekday']})" if info['weekday'] else f"{e}:{info['date']}", COL_WIDTH)
             for e, info in row_items
@@ -268,8 +273,8 @@ async def build_table_from_db(message_id, lang):
         lines.append("─" * (COLS * COL_WIDTH))
     lines += [tx(lang, "hint"), "```"]
     return "\n".join(lines)
-
-
+ 
+ 
 async def build_time_table_from_db(message_id, lang):
     rows = await db.fetch("SELECT emoji, time FROM time_polls WHERE message_id=$1 ORDER BY emoji", message_id)
     if not rows:
@@ -279,7 +284,7 @@ async def build_time_table_from_db(message_id, lang):
     for v in votes:
         if v['emoji'] in time_data:
             time_data[v['emoji']]["users"].append(v['username'])
-
+ 
     lines = ["```", tx(lang, "time_header"), "━" * 36]
     for emoji, info in time_data.items():
         users = info["users"]
@@ -287,24 +292,36 @@ async def build_time_table_from_db(message_id, lang):
         lines.append(f"{emoji} {info['time']}  [{tx(lang, 'people', n=len(users))}]  {user_str}")
     lines += [tx(lang, "time_hint"), "```"]
     return "\n".join(lines)
-
-
+ 
+ 
 # ===== 投稿ヘルパー =====
 async def post_date_table(channel, selected_dates, lang):
     sorted_dates = sorted(selected_dates, key=lambda x: (x['year'], x['month'], x['day']))
-    msg = await channel.send("...")
-    for i, d in enumerate(sorted_dates):
-        emoji = DATE_EMOJIS[i]
-        await db.execute(
-            "INSERT INTO polls (message_id, emoji, date, weekday, lang, row_order) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING",
-            msg.id, emoji, f"{d['month']}/{d['day']}", get_weekday(d['year'], d['month'], d['day']), lang, i
-        )
-    content = await build_table_from_db(msg.id, lang)
-    await msg.edit(content=content)
-    for i in range(len(sorted_dates)):
-        await msg.add_reaction(DATE_EMOJIS[i])
-
-
+    
+    # 7日ごとにチャンクに分割して複数メッセージで投稿
+    for chunk_start in range(0, len(sorted_dates), DATES_PER_MSG):
+        chunk = sorted_dates[chunk_start:chunk_start + DATES_PER_MSG]
+        msg = await channel.send("...")
+        
+        date_data = {}
+        for i, d in enumerate(chunk):
+            global_i = chunk_start + i
+            emoji = DATE_EMOJIS[global_i]
+            date_str = f"{d['month']}/{d['day']}"
+            weekday = get_weekday(d['year'], d['month'], d['day'])
+            await db.execute(
+                "INSERT INTO polls (message_id, emoji, date, weekday, lang, row_order) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING",
+                msg.id, emoji, date_str, weekday, lang, i
+            )
+            date_data[emoji] = {"date": date_str, "weekday": weekday, "users": []}
+        
+        chunk_items = list(date_data.items())
+        content = build_table_chunk(date_data, lang, chunk_items)
+        await msg.edit(content=content)
+        for emoji in date_data:
+            await msg.add_reaction(emoji)
+ 
+ 
 async def post_time_table(channel, time_list, lang):
     msg = await channel.send("...")
     for i, t_str in enumerate(time_list[:10]):
@@ -317,8 +334,8 @@ async def post_time_table(channel, time_list, lang):
     await msg.edit(content=content)
     for i in range(len(time_list[:10])):
         await msg.add_reaction(TIME_EMOJIS[i])
-
-
+ 
+ 
 # ===== 言語選択 =====
 class LangSelectView(discord.ui.View):
     def __init__(self, user_id):
@@ -328,7 +345,7 @@ class LangSelectView(discord.ui.View):
             btn = discord.ui.Button(label=lang, style=discord.ButtonStyle.primary)
             btn.callback = self.make_cb(lang)
             self.add_item(btn)
-
+ 
     def make_cb(self, lang):
         async def cb(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
@@ -336,8 +353,8 @@ class LangSelectView(discord.ui.View):
                 return
             await interaction.response.edit_message(content=tx(lang, "select_mode"), view=ModeSelectView(self.user_id, lang))
         return cb
-
-
+ 
+ 
 # ===== モード選択 =====
 class ModeSelectView(discord.ui.View):
     def __init__(self, user_id, lang):
@@ -351,7 +368,7 @@ class ModeSelectView(discord.ui.View):
         back = discord.ui.Button(label=tx(lang, "back_lang"), style=discord.ButtonStyle.secondary, row=1)
         back.callback = self.go_back
         self.add_item(back)
-
+ 
     def make_cb(self, mode):
         async def cb(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
@@ -365,14 +382,14 @@ class ModeSelectView(discord.ui.View):
                     view=MonthSelectView(self.user_id, self.lang, [], mode)
                 )
         return cb
-
+ 
     async def go_back(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(tx(self.lang, "err_other_user"), ephemeral=True)
             return
         await interaction.response.edit_message(content=tx(self.lang, "select_lang"), view=LangSelectView(self.user_id))
-
-
+ 
+ 
 # ===== 月選択 =====
 class MonthSelectView(discord.ui.View):
     def __init__(self, user_id, lang, selected_months, mode):
@@ -399,7 +416,7 @@ class MonthSelectView(discord.ui.View):
         back = discord.ui.Button(label=tx(lang, "back_mode"), style=discord.ButtonStyle.secondary, row=3)
         back.callback = self.go_back
         self.add_item(back)
-
+ 
     def make_cb(self, month, year):
         async def cb(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
@@ -415,7 +432,7 @@ class MonthSelectView(discord.ui.View):
                 view=MonthSelectView(self.user_id, self.lang, self.selected_months, self.mode)
             )
         return cb
-
+ 
     async def confirm_cb(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(tx(self.lang, "err_other_user"), ephemeral=True)
@@ -428,14 +445,14 @@ class MonthSelectView(discord.ui.View):
             content=tx(self.lang, "select_date", year=first['year'], month=first['month'], selected=tx(self.lang, "not_selected")),
             view=DateSelectView(self.user_id, self.lang, self.selected_months, 0, [], self.mode)
         )
-
+ 
     async def go_back(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(tx(self.lang, "err_other_user"), ephemeral=True)
             return
         await interaction.response.edit_message(content=tx(self.lang, "select_mode"), view=ModeSelectView(self.user_id, self.lang))
-
-
+ 
+ 
 # ===== 日付選択 =====
 class DateSelectView(discord.ui.View):
     def __init__(self, user_id, lang, selected_months, month_idx, selected_dates, mode, page=0):
@@ -452,14 +469,14 @@ class DateSelectView(discord.ui.View):
         self.cur_month = cur['month']
         _, last_day = calendar.monthrange(self.cur_year, self.cur_month)
         days = range(1, min(17, last_day + 1)) if page == 0 else range(17, last_day + 1)
-
+ 
         for day in days:
             wd = get_weekday(self.cur_year, self.cur_month, day)
             is_sel = any(d['year'] == self.cur_year and d['month'] == self.cur_month and d['day'] == day for d in selected_dates)
             btn = discord.ui.Button(label=f"{day}({wd})", style=discord.ButtonStyle.success if is_sel else discord.ButtonStyle.secondary)
             btn.callback = self.make_day_cb(day)
             self.add_item(btn)
-
+ 
         if page == 0 and last_day > 16:
             nb = discord.ui.Button(label=tx(lang, "next_page"), style=discord.ButtonStyle.primary, row=4)
             nb.callback = self.next_page
@@ -468,12 +485,12 @@ class DateSelectView(discord.ui.View):
             pb = discord.ui.Button(label=tx(lang, "prev_page"), style=discord.ButtonStyle.primary, row=4)
             pb.callback = self.prev_page
             self.add_item(pb)
-
+ 
         if month_idx > 0:
             pm = discord.ui.Button(label=f"← {self.selected_months[month_idx-1]['month']}月", style=discord.ButtonStyle.secondary, row=4)
             pm.callback = self.prev_month
             self.add_item(pm)
-
+ 
         if month_idx < len(self.selected_months) - 1:
             nm = discord.ui.Button(label=f"{self.selected_months[month_idx+1]['month']}月 →", style=discord.ButtonStyle.primary, row=4)
             nm.callback = self.next_month
@@ -482,11 +499,11 @@ class DateSelectView(discord.ui.View):
             confirm = discord.ui.Button(label=tx(lang, "confirm_date"), style=discord.ButtonStyle.danger, row=4)
             confirm.callback = self.confirm_cb
             self.add_item(confirm)
-
+ 
         back = discord.ui.Button(label=tx(lang, "back_month"), style=discord.ButtonStyle.secondary, row=4)
         back.callback = self.go_back
         self.add_item(back)
-
+ 
         # 全選択・全解除（row=4の残りスペースに入れる、入らない場合はスキップ）
         try:
             sel_all = discord.ui.Button(label=tx(lang, "select_all"), style=discord.ButtonStyle.primary, row=4)
@@ -494,14 +511,14 @@ class DateSelectView(discord.ui.View):
             self.add_item(sel_all)
         except ValueError:
             pass
-
+ 
         try:
             desel_all = discord.ui.Button(label=tx(lang, "deselect_all"), style=discord.ButtonStyle.secondary, row=4)
             desel_all.callback = self.deselect_all_cb
             self.add_item(desel_all)
         except ValueError:
             pass
-
+ 
     def make_day_cb(self, day):
         async def cb(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
@@ -520,7 +537,7 @@ class DateSelectView(discord.ui.View):
                 view=DateSelectView(self.user_id, self.lang, self.selected_months, self.month_idx, self.selected_dates, self.mode, self.page)
             )
         return cb
-
+ 
     async def next_page(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(tx(self.lang, "err_other_user"), ephemeral=True)
@@ -529,7 +546,7 @@ class DateSelectView(discord.ui.View):
             content=tx(self.lang, "select_date", year=self.cur_year, month=self.cur_month, selected=get_date_str(self.selected_dates, self.lang)),
             view=DateSelectView(self.user_id, self.lang, self.selected_months, self.month_idx, self.selected_dates, self.mode, 1)
         )
-
+ 
     async def prev_page(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(tx(self.lang, "err_other_user"), ephemeral=True)
@@ -538,7 +555,7 @@ class DateSelectView(discord.ui.View):
             content=tx(self.lang, "select_date", year=self.cur_year, month=self.cur_month, selected=get_date_str(self.selected_dates, self.lang)),
             view=DateSelectView(self.user_id, self.lang, self.selected_months, self.month_idx, self.selected_dates, self.mode, 0)
         )
-
+ 
     async def next_month(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(tx(self.lang, "err_other_user"), ephemeral=True)
@@ -548,7 +565,7 @@ class DateSelectView(discord.ui.View):
             content=tx(self.lang, "select_date", year=next_m['year'], month=next_m['month'], selected=get_date_str(self.selected_dates, self.lang)),
             view=DateSelectView(self.user_id, self.lang, self.selected_months, self.month_idx + 1, self.selected_dates, self.mode, 0)
         )
-
+ 
     async def prev_month(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(tx(self.lang, "err_other_user"), ephemeral=True)
@@ -558,7 +575,7 @@ class DateSelectView(discord.ui.View):
             content=tx(self.lang, "select_date", year=prev_m['year'], month=prev_m['month'], selected=get_date_str(self.selected_dates, self.lang)),
             view=DateSelectView(self.user_id, self.lang, self.selected_months, self.month_idx - 1, self.selected_dates, self.mode, 0)
         )
-
+ 
     async def confirm_cb(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(tx(self.lang, "err_other_user"), ephemeral=True)
@@ -576,7 +593,7 @@ class DateSelectView(discord.ui.View):
             await post_date_table(interaction.channel, self.selected_dates, self.lang)
         else:
             await interaction.response.send_modal(TimeInputModal(self.lang, self.selected_dates, self.mode, interaction.channel))
-
+ 
     async def go_back(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(tx(self.lang, "err_other_user"), ephemeral=True)
@@ -585,7 +602,7 @@ class DateSelectView(discord.ui.View):
             content=tx(self.lang, "select_month", selected=get_month_str(self.selected_months, self.lang)),
             view=MonthSelectView(self.user_id, self.lang, self.selected_months, self.mode)
         )
-
+ 
     async def select_all_cb(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(tx(self.lang, "err_other_user"), ephemeral=True)
@@ -600,7 +617,7 @@ class DateSelectView(discord.ui.View):
             content=tx(self.lang, "select_date", year=self.cur_year, month=self.cur_month, selected=get_date_str(self.selected_dates, self.lang)),
             view=DateSelectView(self.user_id, self.lang, self.selected_months, self.month_idx, self.selected_dates, self.mode, self.page)
         )
-
+ 
     async def deselect_all_cb(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(tx(self.lang, "err_other_user"), ephemeral=True)
@@ -610,8 +627,8 @@ class DateSelectView(discord.ui.View):
             content=tx(self.lang, "select_date", year=self.cur_year, month=self.cur_month, selected=get_date_str(self.selected_dates, self.lang)),
             view=DateSelectView(self.user_id, self.lang, self.selected_months, self.month_idx, self.selected_dates, self.mode, self.page)
         )
-
-
+ 
+ 
 # ===== 時間入力モーダル =====
 class TimeInputModal(discord.ui.Modal):
     def __init__(self, lang, selected_dates, mode, channel=None):
@@ -629,7 +646,7 @@ class TimeInputModal(discord.ui.Modal):
             max_length=100
         )
         self.add_item(self.time_input)
-
+ 
     async def on_submit(self, interaction: discord.Interaction):
         time_list = self.time_input.value.strip().split()
         if not time_list:
@@ -642,8 +659,8 @@ class TimeInputModal(discord.ui.Modal):
         else:
             await post_date_table(channel, self.selected_dates, self.lang)
             await post_time_table(channel, time_list, self.lang)
-
-
+ 
+ 
 # ===== スラッシュコマンド =====
 @tree.command(name="moriagetai", description="Event schedule coordinator")
 async def moriagetai(interaction: discord.Interaction):
@@ -652,35 +669,35 @@ async def moriagetai(interaction: discord.Interaction):
         view=LangSelectView(interaction.user.id),
         ephemeral=True
     )
-
-
-
+ 
+ 
+ 
 # ===== 削除コマンド =====
 @tree.command(name="moriagetai_delete", description="指定した投票メッセージを削除します / Delete a poll by message ID")
 @app_commands.describe(message_id="削除する投票メッセージのID / Message ID to delete")
 async def moriagetai_delete(interaction: discord.Interaction, message_id: str):
     await interaction.response.defer(ephemeral=True)
-
+ 
     try:
         msg_id = int(message_id)
     except ValueError:
         await interaction.followup.send("❌ 有効なメッセージIDを入力してください。/ Please enter a valid message ID.", ephemeral=True)
         return
-
+ 
     # DBから確認
     poll_row = await db.fetchrow("SELECT lang FROM polls WHERE message_id=$1 LIMIT 1", msg_id)
     time_row = await db.fetchrow("SELECT lang FROM time_polls WHERE message_id=$1 LIMIT 1", msg_id)
-
+ 
     if not poll_row and not time_row:
         await interaction.followup.send("❌ 該当する投票が見つかりませんでした。/ No poll found with that message ID.", ephemeral=True)
         return
-
+ 
     # DBから削除
     await db.execute("DELETE FROM poll_votes WHERE message_id=$1", msg_id)
     await db.execute("DELETE FROM polls WHERE message_id=$1", msg_id)
     await db.execute("DELETE FROM time_votes WHERE message_id=$1", msg_id)
     await db.execute("DELETE FROM time_polls WHERE message_id=$1", msg_id)
-
+ 
     # メッセージも削除
     try:
         msg = await interaction.channel.fetch_message(msg_id)
@@ -690,9 +707,9 @@ async def moriagetai_delete(interaction: discord.Interaction, message_id: str):
     except discord.Forbidden:
         await interaction.followup.send("⚠️ DBからは削除しましたが、メッセージの削除権限がありません。/ Deleted from DB but missing permission to delete the message.", ephemeral=True)
         return
-
+ 
     await interaction.followup.send("✅ 投票を削除しました！/ Poll deleted successfully!", ephemeral=True)
-
+ 
 # ===== リアクションイベント =====
 @bot.event
 async def on_reaction_add(reaction: discord.Reaction, user: discord.User):
@@ -700,17 +717,19 @@ async def on_reaction_add(reaction: discord.Reaction, user: discord.User):
         return
     emoji = str(reaction.emoji)
     msg_id = reaction.message.id
-
+ 
     row = await db.fetchrow("SELECT lang FROM polls WHERE message_id=$1 AND emoji=$2", msg_id, emoji)
     if row:
         await db.execute(
             "INSERT INTO poll_votes (message_id, emoji, username) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
             msg_id, emoji, user.display_name
         )
-        content = await build_table_from_db(msg_id, row['lang'])
-        if content:
-            await reaction.message.edit(content=content)
-
+        date_data = await build_table_from_db(msg_id, row['lang'])
+        if date_data:
+            chunk_items = list(date_data.items())
+            content = build_table_chunk(date_data, row['lang'], chunk_items)
+            await reaction.message.edit(content=content[:1990])
+ 
     row = await db.fetchrow("SELECT lang FROM time_polls WHERE message_id=$1 AND emoji=$2", msg_id, emoji)
     if row:
         await db.execute(
@@ -719,36 +738,38 @@ async def on_reaction_add(reaction: discord.Reaction, user: discord.User):
         )
         content = await build_time_table_from_db(msg_id, row['lang'])
         if content:
-            await reaction.message.edit(content=content)
-
-
+            await reaction.message.edit(content=content[:1990])
+ 
+ 
 @bot.event
 async def on_reaction_remove(reaction: discord.Reaction, user: discord.User):
     if user.bot:
         return
     emoji = str(reaction.emoji)
     msg_id = reaction.message.id
-
+ 
     row = await db.fetchrow("SELECT lang FROM polls WHERE message_id=$1 AND emoji=$2", msg_id, emoji)
     if row:
         await db.execute("DELETE FROM poll_votes WHERE message_id=$1 AND emoji=$2 AND username=$3", msg_id, emoji, user.display_name)
-        content = await build_table_from_db(msg_id, row['lang'])
-        if content:
-            await reaction.message.edit(content=content)
-
+        date_data = await build_table_from_db(msg_id, row['lang'])
+        if date_data:
+            chunk_items = list(date_data.items())
+            content = build_table_chunk(date_data, row['lang'], chunk_items)
+            await reaction.message.edit(content=content[:1990])
+ 
     row = await db.fetchrow("SELECT lang FROM time_polls WHERE message_id=$1 AND emoji=$2", msg_id, emoji)
     if row:
         await db.execute("DELETE FROM time_votes WHERE message_id=$1 AND emoji=$2 AND username=$3", msg_id, emoji, user.display_name)
         content = await build_time_table_from_db(msg_id, row['lang'])
         if content:
-            await reaction.message.edit(content=content)
-
-
+            await reaction.message.edit(content=content[:1990])
+ 
+ 
 @bot.event
 async def on_ready():
     await init_db()
     await tree.sync()
     print(f"✅ BOT起動: {bot.user}")
-
-
+ 
+ 
 bot.run(TOKEN)
